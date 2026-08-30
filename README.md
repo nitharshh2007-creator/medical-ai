@@ -1,6 +1,6 @@
 # AI Doctor Lab &middot; Clinical AI Educational Dashboard
 
-![AI Doctor Lab Banner](public/thumbnail.jpg)
+![AI Doctor Lab Banner](public/thumbnail.png)
 
 **AI Doctor Lab** is a high-fidelity clinical AI simulation dashboard designed for medical students and practitioners to explore the strengths, limitations, and operational mechanics of diagnostic AI models. Through interactive challenges, students learn first-hand how adjustment of model classification thresholds affects critical metrics (Sensitivity, Specificity, False Positives, and False Negatives).
 
