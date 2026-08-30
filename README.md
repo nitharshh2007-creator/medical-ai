@@ -6,7 +6,7 @@
 
 ---
 
-## 🚀 Key Features
+## Key Features
 
 ### 1. Loop-based AI Scanner Animation
 - **Interactive Scanning**: Features a horizontal laser scanner scanning chest X-ray images, displaying real-time AI status updates (`ANALYZING...` &rarr; `SCANNING...` &rarr; `AI ANALYSIS READY`).
@@ -27,7 +27,7 @@
 
 ---
 
-## 📸 Interface Walkthrough
+## Interface Walkthrough
 
 ### Landing Page & Automated Diagnostics
 The clinical entry screen features the interactive AI lung-scanner animation loop:
@@ -43,7 +43,7 @@ Inspecting high-resolution X-rays, making predictions, and receiving instant aud
 
 ---
 
-## 🛠️ Tech Stack & Setup
+## Tech Stack & Setup
 
 - **Core Framework**: React (Vite, TypeScript)
 - **Animation Engine**: Framer Motion & CSS Keyframes
