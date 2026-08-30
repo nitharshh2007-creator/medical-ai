@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Phase3WaitingRoom } from './components/Phase3WaitingRoom'
+import { InstructorQuizControl } from './components/InstructorQuizControl'
 import {
   ArrowRight,
   AlertCircle,
@@ -34,8 +36,7 @@ import {
   UserRound,
   BadgeCheck,
   Eye,
-  Lightbulb,
-  Scale
+  Lightbulb
 } from 'lucide-react'
 import xrayImg from './assets/xray.jpg'
 import { xrayCases } from './data/xrayCases'
@@ -67,18 +68,13 @@ const Lungs = (props: React.SVGProps<SVGSVGElement>) => (
 )
 
 function App() {
-  const [screenState, setScreenState] = useState<'LANDING' | 'CASE_BRIEF' | 'XRAY_INVESTIGATION' | 'CASE_RESULT' | 'MODEL_PREDICTION' | 'MODEL_ANALYSIS' | 'THRESHOLD_RESULT' | 'INSTRUCTOR_LOGIN' | 'INSTRUCTOR_DASHBOARD'>('LANDING')
+  const [screenState, setScreenState] = useState<'LANDING' | 'CASE_BRIEF' | 'XRAY_INVESTIGATION' | 'CASE_RESULT' | 'MODEL_PREDICTION' | 'COMPLETION' | 'INSTRUCTOR_LOGIN' | 'INSTRUCTOR_DASHBOARD' | 'PHASE_3_WAITING' | 'INSTRUCTOR_QUIZ_CONTROL'>('LANDING')
   const [name, setName] = useState('')
   const [regNumber, setRegNumber] = useState('')
+  const [batch, setBatch] = useState('BATCH 1')
   const [loading, setLoading] = useState(false)
   const [_studentId, setStudentId] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
-
-  // Threshold Challenge States
-  const [threshold, setThreshold] = useState(0.50)
-  const [justification, setJustification] = useState('')
-  const [savedThreshold, setSavedThreshold] = useState(0.50)
-  const [savedJustification, setSavedJustification] = useState('')
 
   // X-Ray viewer states
   const [zoom, setZoom] = useState(1.0)
@@ -88,15 +84,13 @@ function App() {
 
   // API ML Model integration states
   const [apiCases, setApiCases] = useState<any[]>(xrayCases)
-  const [selectedCaseId, setSelectedCaseId] = useState<string>('case-03')
-  const [fullMetrics, setFullMetrics] = useState<any>(null)
-  const [apiOnline, setApiOnline] = useState(false)
 
   // Instructor dashboard states
   const [instructorEmail, setInstructorEmail] = useState('')
   const [instructorPassword, setInstructorPassword] = useState('')
   const [_instructorLoggedIn, setInstructorLoggedIn] = useState(false)
   const [dashboardTab, setDashboardTab] = useState<'DAY_01' | 'DAY_02' | 'DAY_03' | 'DAY_04'>('DAY_01')
+  const [dashboardBatch, setDashboardBatch] = useState('BATCH 1')
   const [instructorError, setInstructorError] = useState('')
   const [dashboardStudents, setDashboardStudents] = useState<any[]>([])
 
@@ -118,6 +112,7 @@ function App() {
           id,
           name,
           roll_number,
+          batch,
           sessions (
             id,
             status,
@@ -163,6 +158,13 @@ function App() {
         window.history.replaceState({}, '', '/instructor/login')
         setScreenState('INSTRUCTOR_LOGIN')
       }
+    } else if (path === '/instructor/quiz') {
+      if (sessionUser) {
+        setScreenState('INSTRUCTOR_QUIZ_CONTROL')
+      } else {
+        window.history.replaceState({}, '', '/instructor/login')
+        setScreenState('INSTRUCTOR_LOGIN')
+      }
     } else if (path === '/instructor/login') {
       if (sessionUser) {
         window.history.replaceState({}, '', '/instructor')
@@ -172,12 +174,8 @@ function App() {
         setScreenState('INSTRUCTOR_LOGIN')
       }
     } else {
-      const savedScreen = localStorage.getItem('active_screen_state')
-      if (savedScreen && savedScreen !== 'INSTRUCTOR_LOGIN' && savedScreen !== 'INSTRUCTOR_DASHBOARD') {
-        setScreenState(savedScreen as any)
-      } else {
-        setScreenState('LANDING')
-      }
+      // Always start at the landing page when visiting the root URL
+      setScreenState('LANDING')
     }
   }
 
@@ -188,13 +186,12 @@ function App() {
   // Session persistence and dynamic state reloading from localStorage/Supabase
   useEffect(() => {
     const initApp = async () => {
-      const savedStudentId = localStorage.getItem('active_student_id')
-      const savedSessionId = localStorage.getItem('active_session_id')
-      const savedName = localStorage.getItem('active_student_name')
-      const savedReg = localStorage.getItem('active_student_reg')
+      const savedStudentId = sessionStorage.getItem('active_student_id')
+      const savedSessionId = sessionStorage.getItem('active_session_id')
+      const savedName = sessionStorage.getItem('active_student_name')
+      const savedReg = sessionStorage.getItem('active_student_reg')
+      const savedBatch = sessionStorage.getItem('active_student_batch')
       const savedCaseIdx = localStorage.getItem('active_case_index')
-      const savedSavedThreshold = localStorage.getItem('saved_threshold')
-      const savedSavedJustification = localStorage.getItem('saved_justification')
 
       if (savedStudentId) setStudentId(savedStudentId)
       if (savedSessionId) {
@@ -224,9 +221,8 @@ function App() {
       }
       if (savedName) setName(savedName)
       if (savedReg) setRegNumber(savedReg)
+      if (savedBatch) setBatch(savedBatch)
       if (savedCaseIdx) setCurrentCaseIndex(parseInt(savedCaseIdx))
-      if (savedSavedThreshold) setSavedThreshold(parseFloat(savedSavedThreshold))
-      if (savedSavedJustification) setSavedJustification(savedSavedJustification)
 
       const savedPredictions = localStorage.getItem('active_predictions')
       if (savedPredictions) {
@@ -262,23 +258,6 @@ function App() {
     }
   }, [])
 
-  // Fetch metrics dynamically from FastAPI whenever threshold changes
-  useEffect(() => {
-    fetch(`http://127.0.0.1:8000/api/metrics?threshold=${threshold}`)
-      .then(res => {
-        if (!res.ok) throw new Error("API metrics fetch failed");
-        return res.json();
-      })
-      .then(data => {
-        setFullMetrics(data);
-        setApiOnline(true);
-      })
-      .catch(err => {
-        console.warn("FastAPI offline, using static metrics fallback.", err);
-        setApiOnline(false);
-      });
-  }, [threshold]);
-
   // Fetch initial cases from FastAPI
   useEffect(() => {
     fetch("http://127.0.0.1:8000/api/cases")
@@ -311,35 +290,6 @@ function App() {
 
   const currentStudentPrediction = predictions[currentCaseIndex]
 
-  // Dynamic threshold metrics calculations
-  const getMetricsForThreshold = (t: number) => {
-    let tp = 0
-    let tn = 0
-    let fp = 0
-    let fn = 0
-
-    const dataset = apiCases.length > 0 ? apiCases : xrayCases;
-    dataset.forEach(c => {
-      const pred = c.modelProbability >= t ? 'PNEUMONIA' : 'NORMAL'
-      const actual = c.actualLabel
-
-      if (pred === 'PNEUMONIA' && actual === 'PNEUMONIA') tp++
-      else if (pred === 'NORMAL' && actual === 'NORMAL') tn++
-      else if (pred === 'PNEUMONIA' && actual === 'NORMAL') fp++
-      else if (pred === 'NORMAL' && actual === 'PNEUMONIA') fn++
-    })
-
-    const recall = tp + fn > 0 ? (tp / (tp + fn)) * 100 : 0
-    const precision = tp + fp > 0 ? (tp / (tp + fp)) * 100 : 0
-    const accuracy = dataset.length > 0 ? ((tp + tn) / dataset.length) * 100 : 0
-    const f1Score = (precision + recall) > 0 ? 2 * (precision * recall) / (precision + recall) : 0
-
-    return { tp, tn, fp, fn, recall, precision, accuracy, f1Score }
-  }
-
-  const currentMetrics = getMetricsForThreshold(threshold)
-  const savedMetrics = getMetricsForThreshold(savedThreshold)
-
   const handleScrollToEntry = () => {
     const element = document.getElementById('student-entry')
     if (element) {
@@ -362,31 +312,46 @@ function App() {
         .eq('roll_number', regNumber.trim())
         .maybeSingle();
 
-      if (findError) throw findError;
+      if (findError) {
+        console.error('[DIAGNOSTIC] SELECT Error:', { message: findError.message, code: findError.code, details: findError.details, hint: findError.hint });
+        throw findError;
+      }
 
       let activeId = '';
       if (existingStudent) {
         activeId = existingStudent.id;
+        // Update batch if they are logging in again and selected a batch
+        if (existingStudent.batch !== batch) {
+          const { error: updateBatchErr } = await supabase
+            .from('students')
+            .update({ batch })
+            .eq('id', activeId);
+          if (updateBatchErr) {
+            console.error('Failed to update existing student batch', updateBatchErr);
+          }
+        }
       } else {
         const { data: newStudent, error: insertError } = await supabase
           .from('students')
-          .insert({ name: name.trim(), roll_number: regNumber.trim() })
+          .insert({ name: name.trim(), roll_number: regNumber.trim(), batch })
           .select()
           .single();
-        if (insertError) throw insertError;
+        if (insertError) {
+          console.error('[DIAGNOSTIC] INSERT Error:', { message: insertError.message, code: insertError.code, details: insertError.details, hint: insertError.hint });
+          throw insertError;
+        }
         if (!newStudent) throw new Error('Failed to insert student record.');
         activeId = newStudent.id;
       }
 
       console.log('Student ID:', activeId);
 
-      // Look for an existing Day 01 in_progress session for this student
+      // Look for an existing Day 01 session for this student
       const { data: existingSession, error: sessFindErr } = await supabase
         .from('sessions')
         .select('*')
         .eq('student_id', activeId)
         .eq('day_number', 1)
-        .eq('status', 'in_progress')
         .maybeSingle();
       if (sessFindErr) throw sessFindErr;
 
@@ -408,10 +373,18 @@ function App() {
 
       setStudentId(activeId);
       setSessionId(sessionRecord.id);
-      localStorage.setItem('active_student_id', activeId);
-      localStorage.setItem('active_session_id', sessionRecord.id);
-      localStorage.setItem('active_student_name', name.trim());
-      localStorage.setItem('active_student_reg', regNumber.trim());
+      sessionStorage.setItem('active_student_id', activeId);
+      sessionStorage.setItem('active_session_id', sessionRecord.id);
+      sessionStorage.setItem('active_student_name', name.trim());
+      sessionStorage.setItem('active_student_reg', regNumber.trim());
+      sessionStorage.setItem('active_student_batch', batch);
+
+      // Always explicitly start at Case 01 when entering investigation
+      setCurrentCaseIndex(0);
+      localStorage.setItem('active_case_index', '0');
+      const emptyPredictions = Array.from({ length: 5 }, () => ({ prediction: null, confidence: 75, note: '' }));
+      setPredictions(emptyPredictions);
+      localStorage.setItem('active_predictions', JSON.stringify(emptyPredictions));
 
       localStorage.setItem('active_screen_state', 'CASE_BRIEF');
       setScreenState('CASE_BRIEF');
@@ -507,47 +480,6 @@ function App() {
 
     localStorage.setItem('active_screen_state', 'CASE_RESULT')
     setScreenState('CASE_RESULT')
-  }
-
-  // Phase 1: Connect - Save threshold result & complete session
-  const handleSubmitThreshold = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSavedThreshold(threshold)
-    setSavedJustification(justification)
-    localStorage.setItem('saved_threshold', String(threshold))
-    localStorage.setItem('saved_justification', justification)
-
-    try {
-      if (sessionId) {
-        // Calculate score: how many predictions match ground truth labels
-        let correctCount = 0
-        predictions.forEach((pred, idx) => {
-          const actual = apiCases[idx]?.actualLabel || xrayCases[idx]?.actualLabel
-          if (pred.prediction === actual) correctCount++
-        })
-        const score = (correctCount / 5) * 100
-
-        // Complete the session
-        await supabase
-          .from('sessions')
-          .update({ status: 'completed', completed_at: new Date().toISOString() })
-          .eq('id', sessionId)
-
-        // Save result
-        await supabase
-          .from('results')
-          .insert({
-            session_id: sessionId,
-            score: score,
-            completion_time: 1200 // default dummy duration matching case specifications
-          })
-      }
-    } catch (err) {
-      console.error("Error finalizing results:", err)
-    }
-
-    localStorage.setItem('active_screen_state', 'THRESHOLD_RESULT')
-    setScreenState('THRESHOLD_RESULT')
   }
 
   const handleContinueNext = () => {
@@ -1017,6 +949,18 @@ function App() {
                       onChange={(e) => setRegNumber(e.target.value)}
                       className="w-full bg-white border border-[#D5E5EE] rounded-xl px-4 py-3.5 text-sm text-[#12324A] placeholder-[#6E879A] focus:outline-none focus:border-[#0B6FE8] focus:ring-4 focus:ring-[#0B6FE8]/10 transition-all font-semibold"
                     />
+                  </div>
+                  <div>
+                    <select
+                      value={batch}
+                      onChange={(e) => setBatch(e.target.value)}
+                      className="w-full bg-white border border-[#D5E5EE] rounded-xl px-4 py-3.5 text-sm text-[#12324A] focus:outline-none focus:border-[#0B6FE8] focus:ring-4 focus:ring-[#0B6FE8]/10 transition-all font-semibold appearance-none cursor-pointer"
+                    >
+                      <option value="BATCH 1">BATCH 1</option>
+                      <option value="BATCH 2">BATCH 2</option>
+                      <option value="BATCH 3">BATCH 3</option>
+                      <option value="BATCH 8">BATCH 8</option>
+                    </select>
                   </div>
 
                   <button
@@ -2138,604 +2082,125 @@ function App() {
             predictions={predictions}
             studentName={name || 'Aarav Kumar'}
             studentRoll={regNumber || '24CS1001'}
-            onNext={() => setScreenState('MODEL_ANALYSIS')}
+            onFinish={async (finalThreshold) => {
+              if (sessionId) {
+                // Save model_evaluations
+                const evaluations = apiCases.map(c => ({
+                  session_id: sessionId,
+                  case_id: c.caseId,
+                  actual_label: c.actualLabel,
+                  ai_probability: c.modelProbability,
+                  ai_prediction: c.modelProbability >= finalThreshold ? 'PNEUMONIA' : 'NORMAL',
+                  threshold: finalThreshold
+                }));
+                await supabase.from('model_evaluations').insert(evaluations);
+                
+                // Save threshold_history
+                await supabase.from('threshold_history').insert({
+                  session_id: sessionId,
+                  selected_threshold: finalThreshold,
+                  timestamp: new Date().toISOString()
+                });
+              }
+              // Move student to COMPLETION state safely
+              setZoom(1.0);
+              setScreenState('COMPLETION');
+              localStorage.setItem('active_screen_state', 'COMPLETION');
+            }}
           />
         )}
 
         {/* ==========================================
-            SCREEN 5: MODEL ANALYSIS (THRESHOLD CHALLENGE)
+            SCREEN 6: COMPLETION / PHASE 3 PLACEHOLDER
             ========================================== */}
-        {screenState === 'MODEL_ANALYSIS' && (
+        {screenState === 'COMPLETION' && (
           <motion.div
-            key="model-analysis-screen"
+            key="completion-screen"
             initial="hidden"
             animate="show"
             exit={{ opacity: 0 }}
             variants={containerVariants}
-            className="flex flex-col min-h-screen bg-background"
+            className="flex flex-col min-h-screen bg-[#F2F8FC] justify-center items-center py-10"
           >
-            {/* Header */}
-            <motion.header
-              variants={springEntrance}
-              className="w-full bg-[#062B5C] text-white shadow-md sticky top-0 z-50 px-6"
-            >
-              <div className="max-w-7xl mx-auto flex items-center justify-between h-18">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-white/10 border border-white/20 rounded-lg flex items-center justify-center">
-                    <Stethoscope className="w-5 h-5 text-[#0B6FE8]" />
-                  </div>
-                  <div className="flex flex-col text-left">
-                    <span className="text-base font-bold tracking-wider leading-none mb-1">AI DOCTOR LAB</span>
-                    <span className="text-[10px] text-slate-300 uppercase tracking-widest font-mono font-medium">
-                      APPLY. LEARN. SAVE LIVES.
-                    </span>
-                  </div>
-                </div>
-                
-                <div className="flex items-center gap-6 text-xs font-bold text-white/90">
-                  <div className="flex items-center gap-2 bg-white/10 px-3 py-1 rounded border border-white/15">
-                    <CalendarDays className="w-4 h-4 text-[#0B6FE8]" />
-                    <span className="font-mono tracking-wider uppercase">DAY 01</span>
-                  </div>
-                  <div className="flex items-center gap-2 bg-white/10 px-3 py-1 rounded border border-white/15">
-                    <Clock3 className="w-4 h-4 text-[#0B6FE8]" />
-                    <span className="font-mono tracking-wider uppercase">20 MIN</span>
-                  </div>
-                </div>
+            <div className="bg-white border border-[#D5E5EE] p-12 rounded-2xl max-w-lg w-full shadow-[0_8px_30px_rgba(30,90,130,0.08)] text-center space-y-6">
+              <div className="w-20 h-20 bg-[#E1F1F9] rounded-full mx-auto flex items-center justify-center text-[#0B6FE8]">
+                <Check className="w-10 h-10" />
               </div>
-            </motion.header>
-
-            {/* Main Content Area */}
-            <div className="flex-1 max-w-[1200px] w-full mx-auto px-6 py-10 md:py-12 space-y-10">
               
-              {/* Page Hero */}
-              <motion.div variants={springEntrance} className="text-center space-y-3.5 max-w-3xl mx-auto">
-                <div className="inline-flex items-center gap-2 text-primary font-bold tracking-widest text-[11px] font-mono bg-primary-light border border-primary/20 rounded-full px-3 py-1">
-                  <BrainCircuit className="w-4 h-4 text-primary" />
-                  MODEL ANALYSIS
-                </div>
-                <h1 className="text-4xl md:text-5xl font-black tracking-tight text-text-primary uppercase">
-                  HOW SENSITIVE SHOULD THE MODEL BE?
-                </h1>
-                <p className="text-sm sm:text-base text-slate-400 leading-relaxed max-w-2xl mx-auto">
-                  The model gives every X-ray a pneumonia score. You decide how high that score must be before the system calls a case positive.
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mx-auto pt-2 text-left">
-                  <div className="bg-blue-950/10 border border-border rounded-lg p-3 text-xs text-slate-400">
-                    <span className="text-primary font-bold block mb-1">Lower threshold</span>
-                    catches more positives, but may create more false positives.
-                  </div>
-                  <div className="bg-blue-950/10 border border-border rounded-lg p-3 text-xs text-slate-400">
-                    <span className="text-primary font-bold block mb-1">Higher threshold</span>
-                    creates fewer false positives, but may miss more positives.
-                  </div>
-                </div>
-              </motion.div>
+              <h2 className="text-3xl font-black tracking-tight text-[#12324A] uppercase">
+                PHASE 2 COMPLETE
+              </h2>
+              
+              <p className="text-[#49677F] leading-relaxed text-sm">
+                You have successfully completed the threshold investigation.
+                <br /><br />
+                <strong>You are now ready for the live Q&A challenge.</strong>
+              </p>
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
-                
-                {/* Left Side: Controls & Challenge */}
-                <div className="lg:col-span-7 space-y-8 flex flex-col justify-between">
-                  
-                  {/* Threshold Control Card */}
-                  <motion.div 
-                    variants={springEntrance}
-                    className="bg-surface-soft border border-border rounded-xl p-6 text-left space-y-6 shadow-sm"
-                  >
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <h4 className="text-xs font-mono font-bold tracking-widest text-slate-550 uppercase">DECISION THRESHOLD</h4>
-                        <p className="text-xs text-slate-500 mt-1">Adjust the slider or choose a preset threshold.</p>
-                      </div>
-                      <span className="text-3xl font-black text-primary font-mono">{(threshold * 100).toFixed(0)}%</span>
-                    </div>
-
-                    <div className="space-y-2 pt-2">
-                      <input 
-                        type="range"
-                        min="0.00"
-                        max="1.00"
-                        step="0.01"
-                        value={threshold}
-                        onChange={(e) => setThreshold(parseFloat(e.target.value))}
-                        className="w-full h-1.5 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-blue-500 focus:outline-none"
-                      />
-                      <div className="flex justify-between text-[10px] font-mono text-slate-600 font-bold uppercase tracking-wider px-1">
-                        <span>0%</span>
-                        <span>50% (Default)</span>
-                        <span>100%</span>
-                      </div>
-                    </div>
-
-                    {/* Presets */}
-                    <div className="space-y-2.5">
-                      <span className="text-[10px] font-mono font-bold tracking-wider text-slate-550 uppercase block">TRY THESE THRESHOLDS</span>
-                      <div className="flex gap-2 flex-wrap">
-                        {[0.30, 0.50, 0.70, 0.80].map((val) => (
-                          <motion.button
-                            key={val}
-                            type="button"
-                            onClick={() => setThreshold(val)}
-                            className={`px-3 py-1.5 rounded border font-mono text-xs font-bold transition-all cursor-pointer ${
-                              threshold === val 
-                                ? 'bg-primary border-blue-500 text-white shadow-lg' 
-                                : 'bg-surface border-border-light text-slate-400 hover:border-border-light hover:text-slate-200'
-                            }`}
-                            whileHover={{ y: -1 }}
-                            whileTap={{ scale: 0.98 }}
-                          >
-                            {(val * 100).toFixed(0)}%
-                          </motion.button>
-                        ))}
-                      </div>
-                    </div>
-                  </motion.div>
-
-                  {/* Challenge & Justification Card */}
-                  <motion.div 
-                    variants={springEntrance}
-                    className="bg-surface-soft border border-border rounded-xl p-6 text-left space-y-6 shadow-sm flex-1 flex flex-col justify-between"
-                  >
-                    <div className="space-y-4">
-                      <div>
-                        <span className="text-xs font-mono font-bold tracking-widest text-slate-550 uppercase">YOUR CHALLENGE</span>
-                        <h4 className="text-sm font-bold text-slate-350 mt-1">Choose a threshold you would actually deploy for this educational scenario.</h4>
-                      </div>
-
-                      <div className="space-y-3">
-                        <span className="text-[10px] font-mono font-bold tracking-wider text-slate-550 uppercase block font-semibold">5-CASE INVESTIGATION PERFORMANCE</span>
-                        <div className="p-4 bg-surface-soft border border-border rounded-lg grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
-                          <div>
-                            <span className="text-slate-555 font-mono block">ACCURACY</span>
-                            <span className="text-text-primary font-bold font-mono text-sm">{currentMetrics.accuracy.toFixed(1)}%</span>
-                          </div>
-                          <div>
-                            <span className="text-slate-555 font-mono block">RECALL</span>
-                            <span className="text-text-primary font-bold font-mono text-sm">{currentMetrics.recall.toFixed(1)}%</span>
-                          </div>
-                          <div>
-                            <span className="text-slate-555 font-mono block">PRECISION</span>
-                            <span className="text-text-primary font-bold font-mono text-sm">{currentMetrics.precision.toFixed(1)}%</span>
-                          </div>
-                          <div>
-                            <span className="text-slate-555 font-mono block">F1 SCORE</span>
-                            <span className="text-text-primary font-bold font-mono text-sm">{currentMetrics.f1Score.toFixed(1)}%</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        <span className="text-[10px] font-mono font-bold tracking-wider text-slate-550 uppercase block font-semibold">FULL TEST-SET PERFORMANCE (100 CASES)</span>
-                        <div className="p-4 bg-surface-soft border border-border rounded-lg grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
-                          <div>
-                            <span className="text-slate-555 font-mono block">ACCURACY</span>
-                            <span className="text-text-primary font-bold font-mono text-sm">{apiOnline && fullMetrics ? `${fullMetrics.accuracy.toFixed(1)}%` : '89.6%'}</span>
-                          </div>
-                          <div>
-                            <span className="text-slate-555 font-mono block">RECALL</span>
-                            <span className="text-text-primary font-bold font-mono text-sm">{apiOnline && fullMetrics ? `${fullMetrics.recall.toFixed(1)}%` : '91.4%'}</span>
-                          </div>
-                          <div>
-                            <span className="text-slate-555 font-mono block">PRECISION</span>
-                            <span className="text-text-primary font-bold font-mono text-sm">{apiOnline && fullMetrics ? `${fullMetrics.precision.toFixed(1)}%` : '88.0%'}</span>
-                          </div>
-                          <div>
-                            <span className="text-slate-555 font-mono block">F1 SCORE</span>
-                            <span className="text-text-primary font-bold font-mono text-sm">{apiOnline && fullMetrics ? `${fullMetrics.f1Score.toFixed(1)}%` : '89.6%'}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <form onSubmit={handleSubmitThreshold} className="space-y-4">
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-mono font-bold tracking-wider text-slate-550 uppercase block">WHY DID YOU CHOOSE THIS THRESHOLD?</label>
-                          <textarea
-                            required
-                            rows={3}
-                            minLength={20}
-                            maxLength={300}
-                            placeholder="Explain why you chose this threshold. Consider the cost of false negatives versus false positives."
-                            value={justification}
-                            onChange={(e) => setJustification(e.target.value)}
-                            className="w-full bg-surface border border-border-light rounded-lg p-3 text-xs text-white placeholder-text-muted focus:outline-none focus:border-blue-500 transition-colors resize-none"
-                          />
-                          <div className="flex justify-between text-[9px] font-mono text-slate-600 font-bold">
-                            <span>MINIMUM: 20 CHARACTERS</span>
-                            <span>{justification.length} / 300</span>
-                          </div>
-                        </div>
-
-                        <button
-                          type="submit"
-                          disabled={justification.trim().length < 20}
-                          className="w-full bg-primary hover:bg-primary-dark disabled:bg-blue-900/40 disabled:text-slate-500 text-white font-bold py-3.5 rounded-lg flex items-center justify-center gap-2 transition-all duration-300 cursor-pointer shadow-lg shadow-primary/20"
-                        >
-                          SUBMIT THRESHOLD DECISION
-                          <ArrowRight className="w-4 h-4" />
-                        </button>
-                      </form>
-                    </div>
-                  </motion.div>
-
-                </div>
-
-                {/* Right Side: Matrix, Case Details & Disclaimers */}
-                <div className="lg:col-span-5 space-y-8 flex flex-col justify-between">
-                  
-                  {/* Confusion Matrix Card */}
-                  <motion.div 
-                    variants={springEntrance}
-                    className="bg-surface-soft border border-border rounded-xl p-6 text-left space-y-5 shadow-sm"
-                  >
-                    <span className="text-xs font-mono font-bold tracking-widest text-slate-550 uppercase block">CONFUSION MATRIX (5-CASE SAMPLE)</span>
+              <button
+                onClick={async () => {
+                  try {
+                    const savedStudentId = sessionStorage.getItem('active_student_id');
+                    const savedStudentBatch = sessionStorage.getItem('active_student_batch');
                     
-                    {/* Visual 2x2 Matrix */}
-                    <div className="space-y-2">
-                      <div className="grid grid-cols-3 text-[9px] font-mono font-bold text-slate-500 uppercase tracking-widest text-center">
-                        <div />
-                        <div>PRED NORMAL</div>
-                        <div>PRED PNEUMONIA</div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 items-center">
-                        <div className="text-[9px] font-mono font-bold text-slate-500 uppercase tracking-widest text-left">ACTUAL NORMAL</div>
-                        <div className="bg-surface-soft border border-border rounded p-3 text-center transition-colors">
-                          <span className="block text-[8px] font-mono text-slate-500">TN</span>
-                          <span className="text-sm font-bold text-text-primary font-mono">{currentMetrics.tn}</span>
-                        </div>
-                        <div className={`border rounded p-3 text-center transition-colors ${currentMetrics.fp > 0 ? 'bg-warning-soft border-warning-border text-warning' : 'bg-surface-soft border-border text-white'}`}>
-                          <span className="block text-[8px] font-mono text-slate-550">FP</span>
-                          <span className="text-sm font-bold font-mono">{currentMetrics.fp}</span>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 items-center">
-                        <div className="text-[9px] font-mono font-bold text-slate-500 uppercase tracking-widest text-left">ACTUAL PNEUMONIA</div>
-                        <div className={`border rounded p-3 text-center transition-colors ${currentMetrics.fn > 0 ? 'bg-danger-soft border-danger-border text-danger' : 'bg-surface-soft border-border text-white'}`}>
-                          <span className="block text-[8px] font-mono text-slate-550">FN</span>
-                          <span className="text-sm font-bold font-mono">{currentMetrics.fn}</span>
-                        </div>
-                        <div className="bg-surface-soft border border-border rounded p-3 text-center transition-colors">
-                          <span className="block text-[8px] font-mono text-slate-550">TP</span>
-                          <span className="text-sm font-bold text-text-primary font-mono">{currentMetrics.tp}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
+                    if (!savedStudentId || !savedStudentBatch) {
+                      alert("Student ID or Batch not found. Please register again.");
+                      return;
+                    }
 
-                  {/* Dynamic Case Details Card */}
-                  {(() => {
-                    const selectedCase = apiCases.find(c => c.caseId === selectedCaseId) || apiCases[2] || xrayCases[2];
-                    const selectedIdx = apiCases.findIndex(c => c.caseId === selectedCase.caseId);
-                    const selectedStudentPred = predictions[selectedIdx]?.prediction || 'N/A';
-                    const selectedStudentConf = predictions[selectedIdx]?.confidence || 0;
-                    const selectedStudentObs = predictions[selectedIdx]?.note || '';
-                    const selectedAiPred = selectedCase.modelProbability >= threshold ? 'PNEUMONIA' : 'NORMAL';
+                    const { data: room, error: roomError } = await supabase
+                      .from('quiz_rooms')
+                      .select('id')
+                      .eq('batch', savedStudentBatch)
+                      .in('status', ['waiting', 'countdown', 'active'])
+                      .order('created_at', { ascending: false })
+                      .limit(1)
+                      .single();
+                      
+                    if (roomError || !room) {
+                      alert(`No active Phase 3 room found for ${savedStudentBatch}. Please wait for the instructor to start it.`);
+                      return;
+                    }
                     
-                    const isStudentCorrect = selectedStudentPred === selectedCase.actualLabel;
-                    const isAiCorrect = selectedAiPred === selectedCase.actualLabel;
-
-                    let studentResText = isStudentCorrect ? 'CORRECT' : (selectedStudentPred === 'NORMAL' ? 'FALSE NEGATIVE' : 'FALSE POSITIVE');
-                    let studentResColor = isStudentCorrect ? 'text-success bg-surfacemerald-950/10 border-success-border' : (selectedStudentPred === 'NORMAL' ? 'text-danger bg-danger-soft border-danger-border' : 'text-warning bg-warning-soft border-warning-border');
-
-                    let aiResText = isAiCorrect ? 'CORRECT' : (selectedAiPred === 'NORMAL' ? 'FALSE NEGATIVE' : 'FALSE POSITIVE');
-                    let aiResColor = isAiCorrect ? 'text-success bg-surfacemerald-950/10 border-success-border' : (selectedAiPred === 'NORMAL' ? 'text-danger bg-danger-soft border-danger-border' : 'text-warning bg-warning-soft border-warning-border');
-
-                    const isAboveThreshold = selectedCase.modelProbability >= threshold;
-
-                    return (
-                      <motion.div 
-                        variants={springEntrance}
-                        className="bg-surface-soft border border-border rounded-xl p-6 text-left space-y-4 shadow-sm"
-                      >
-                        <div className="flex justify-between items-center border-b border-border pb-3">
-                          <span className="text-xs font-mono font-bold tracking-widest text-slate-350 uppercase">
-                            CASE DETAILS: {selectedCase.caseId.replace('case-', 'Case ')}
-                          </span>
-                          <span className="text-[9px] font-mono bg-blue-950/40 px-2 py-0.5 rounded text-primary border border-blue-500/20 uppercase font-bold">
-                            Active Study
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4 text-xs font-mono">
-                          <div>
-                            <span className="text-slate-500 block text-[9px] uppercase">YOUR PREDICTION</span>
-                            <span className="font-bold text-slate-200">{selectedStudentPred} ({selectedStudentConf}%)</span>
-                          </div>
-                          <div>
-                            <span className="text-slate-500 block text-[9px] uppercase">ACTUAL LABEL</span>
-                            <span className="font-bold text-slate-200">{selectedCase.actualLabel}</span>
-                          </div>
-                          <div>
-                            <span className="text-slate-500 block text-[9px] uppercase font-bold">YOUR RESULT</span>
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold inline-block ${studentResColor}`}>{studentResText}</span>
-                          </div>
-                          <div>
-                            <span className="text-slate-500 block text-[9px] uppercase font-bold">AI RESULT</span>
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold inline-block ${aiResColor}`}>{aiResText}</span>
-                          </div>
-                        </div>
-
-                        {/* Live Threshold Explanation Check */}
-                        <div className="bg-surface border border-border-light p-3.5 rounded-lg space-y-2 text-xs font-mono">
-                          <span className="text-[9px] text-slate-550 block font-bold uppercase tracking-wider">LIVE THRESHOLD CALCULATION</span>
-                          <div className="grid grid-cols-2 gap-1 text-[11px] text-slate-300">
-                            <span>AI SCORE:</span>
-                            <span className="text-primary font-black">{(selectedCase.modelProbability * 100).toFixed(2)}% ({selectedCase.modelProbability.toFixed(4)})</span>
-                            <span>THRESHOLD:</span>
-                            <span className="text-primary font-black">{(threshold * 100).toFixed(0)}% ({threshold.toFixed(2)})</span>
-                          </div>
-                          <div className="border-t border-border-light pt-2 text-[11px] text-slate-350">
-                            <span className="font-bold text-white">{selectedCase.modelProbability.toFixed(4)} {isAboveThreshold ? '≥' : '<'} {threshold.toFixed(2)}</span>
-                            <span className="text-primary font-extrabold ml-1">&rarr; AI &rarr; {selectedAiPred}</span>
-                          </div>
-                        </div>
-
-                        {selectedStudentObs.trim() && (
-                          <div className="text-[11px] text-slate-400 italic bg-surface p-2.5 rounded border border-border-light">
-                            " {selectedStudentObs} "
-                          </div>
-                        )}
-                      </motion.div>
-                    );
-                  })()}
-
-                  {/* Ethical Trade-Off Note */}
-                  <motion.div 
-                    variants={springEntrance}
-                    className="bg-surface-soft border border-border rounded-xl p-5 text-left flex gap-4 items-start transition-colors hover:border-border-light"
-                  >
-                    <div className="p-2 bg-primary-light border border-blue-500/10 text-primary rounded shrink-0">
-                      <Scale className="w-5 h-5" />
-                    </div>
-                    <div className="space-y-1">
-                      <h5 className="text-[10px] font-mono font-bold tracking-wider text-slate-350 uppercase">THE TRADE-OFF</h5>
-                      <p className="text-xs text-slate-500 leading-relaxed">
-                        In medical AI, there is rarely one perfect threshold. Lowering the threshold may catch more positive cases, but can also increase false positives. Raising it may reduce false alarms, but can increase missed cases.
-                      </p>
-                    </div>
-                  </motion.div>
-
-                </div>
-
-              </div>
-
-              {/* Live Model Decisions Table */}
-              <motion.div 
-                variants={springEntrance}
-                className="bg-surface-soft border border-border rounded-xl p-6 text-left space-y-4 shadow-sm"
+                    
+                    const { error: joinError } = await supabase
+                      .from('quiz_participants')
+                      .insert({ quiz_room_id: room.id, student_id: savedStudentId, status: 'READY' });
+                      
+                    if (joinError && joinError.code !== '23505') {
+                      console.error('Failed to join quiz room', joinError);
+                      alert("Failed to join the quiz room. Please try again.");
+                      return;
+                    }
+                    
+                    setScreenState('PHASE_3_WAITING');
+                    localStorage.setItem('active_screen_state', 'PHASE_3_WAITING');
+                    localStorage.setItem('active_quiz_room_id', room.id);
+                  } catch (e) {
+                    console.error(e);
+                  }
+                }}
+                className="w-full bg-[#0B6FE8] hover:bg-[#0F5E9C] text-white font-extrabold py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all duration-300 shadow-lg text-xs uppercase tracking-wider mt-4"
               >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-xs font-mono font-bold tracking-widest text-slate-550 uppercase">LIVE MODEL DECISIONS COMPARISON</h4>
-                    <p className="text-[10px] text-slate-500 mt-1">Click a case row below to see live formula calculations and details above.</p>
-                  </div>
-                  <span className="text-[9px] font-mono text-slate-500 bg-blue-950/20 border border-blue-550/20 px-2 py-0.5 rounded">UPDATES DYNAMICALLY</span>
-                </div>
-                
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs font-mono">
-                    <thead>
-                      <tr className="border-b border-border text-slate-500 uppercase text-[9px] tracking-wider">
-                        <th className="pb-3 text-left font-bold">CASE ID</th>
-                        <th className="pb-3 text-left font-bold">YOUR PRED</th>
-                        <th className="pb-3 text-left font-bold">ACTUAL LABEL</th>
-                        <th className="pb-3 text-left font-bold">MODEL SCORE</th>
-                        <th className="pb-3 text-left font-bold">AI PRED</th>
-                        <th className="pb-3 text-left font-bold">YOUR RESULT</th>
-                        <th className="pb-3 text-right font-bold">AI RESULT</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-900/60">
-                      {apiCases.map((c, idx) => {
-                        const studentPred = predictions[idx]?.prediction || 'N/A'
-                        const studentCorrect = studentPred === c.actualLabel
-                        let studentResultText = 'CORRECT'
-                        let studentBadgeColor = 'text-success bg-surfacemerald-950/15 border border-success-border'
-                        if (!studentCorrect) {
-                          if (studentPred === 'NORMAL' && c.actualLabel === 'PNEUMONIA') {
-                            studentResultText = 'FALSE NEGATIVE'
-                            studentBadgeColor = 'text-danger bg-danger-soft border border-danger-border'
-                          } else {
-                            studentResultText = 'FALSE POSITIVE'
-                            studentBadgeColor = 'text-warning bg-warning-soft border border-warning-border'
-                          }
-                        }
-
-                        const aiPred = c.modelProbability >= threshold ? 'PNEUMONIA' : 'NORMAL'
-                        const aiCorrect = aiPred === c.actualLabel
-                        let aiResultText = 'CORRECT'
-                        let aiBadgeColor = 'text-success bg-surfacemerald-950/15 border border-success-border'
-                        if (!aiCorrect) {
-                          if (aiPred === 'NORMAL' && c.actualLabel === 'PNEUMONIA') {
-                            aiResultText = 'FALSE NEGATIVE'
-                            aiBadgeColor = 'text-danger bg-danger-soft border border-danger-border'
-                          } else {
-                            aiResultText = 'FALSE POSITIVE'
-                            aiBadgeColor = 'text-warning bg-warning-soft border border-warning-border'
-                          }
-                        }
-
-                        return (
-                          <tr 
-                            key={c.caseId} 
-                            onClick={() => setSelectedCaseId(c.caseId)}
-                            className={`hover:bg-surface transition-colors cursor-pointer ${selectedCaseId === c.caseId ? 'bg-blue-950/30' : ''}`}
-                          >
-                            <td className="py-3.5 text-left text-slate-200 font-bold uppercase">
-                              {c.caseId.replace('case-', 'Case ')}
-                              {selectedCaseId === c.caseId && <span className="ml-1 text-primary">&bull;</span>}
-                            </td>
-                            <td className="py-3.5 text-left text-slate-350">{studentPred}</td>
-                            <td className="py-3.5 text-left text-slate-350">{c.actualLabel}</td>
-                            <td className="py-3.5 text-left text-slate-350">{(c.modelProbability * 100).toFixed(2)}%</td>
-                            <td className="py-3.5 text-left text-primary font-bold">{aiPred}</td>
-                            <td className="py-3.5 text-left">
-                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${studentBadgeColor}`}>
-                                {studentResultText}
-                              </span>
-                            </td>
-                            <td className="py-3.5 text-right">
-                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${aiBadgeColor}`}>
-                                {aiResultText}
-                              </span>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </motion.div>
-
-            </div>
-
-            {/* Footer */}
-            <footer className="w-full border-t border-slate-950 bg-surface py-8 mt-auto">
-              <div className="max-w-7xl mx-auto px-6 text-center">
-                <span className="text-xs font-semibold tracking-wider text-slate-500 block mb-2">
-                  AI Doctor Lab &middot; Educational Simulation
-                </span>
+                ENTER PHASE 3 QUIZ
+              </button>
+              
+              <div className="pt-4 border-t border-[#D5E5EE]">
+                <p className="text-[10px] font-mono tracking-widest text-[#6E879A] uppercase">
+                  SESSION SAVED &middot; PLEASE PROCEED TO QUIZ
+                </p>
               </div>
-            </footer>
+            </div>
           </motion.div>
         )}
-
-        {/* ==========================================
-            SCREEN 6: THRESHOLD RESULT SCREEN
-            ========================================== */}
-        {screenState === 'THRESHOLD_RESULT' && (
-          <motion.div
-            key="threshold-result-screen"
-            initial="hidden"
-            animate="show"
-            exit={{ opacity: 0 }}
-            variants={containerVariants}
-            className="flex flex-col min-h-screen bg-background"
-          >
-            {/* Header */}
-            <motion.header
-              variants={springEntrance}
-              className="w-full bg-[#062B5C] text-white shadow-md sticky top-0 z-50 px-6"
-            >
-              <div className="max-w-7xl mx-auto flex items-center justify-between h-18">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-white/10 border border-white/20 rounded-lg flex items-center justify-center">
-                    <Stethoscope className="w-5 h-5 text-[#0B6FE8]" />
-                  </div>
-                  <div className="flex flex-col text-left">
-                    <span className="text-base font-bold tracking-wider leading-none mb-1">AI DOCTOR LAB</span>
-                    <span className="text-[10px] text-slate-300 uppercase tracking-widest font-mono font-medium">
-                      APPLY. LEARN. SAVE LIVES.
-                    </span>
-                  </div>
-                </div>
-                
-                <div className="flex items-center gap-6 text-xs font-bold text-white/90">
-                  <div className="flex items-center gap-2 bg-white/10 px-3 py-1 rounded border border-white/15">
-                    <CalendarDays className="w-4 h-4 text-[#0B6FE8]" />
-                    <span className="font-mono tracking-wider uppercase">DAY 01</span>
-                  </div>
-                  <div className="flex items-center gap-2 bg-white/10 px-3 py-1 rounded border border-white/15">
-                    <Clock3 className="w-4 h-4 text-[#0B6FE8]" />
-                    <span className="font-mono tracking-wider uppercase">20 MIN</span>
-                  </div>
-                </div>
-              </div>
-            </motion.header>
-
-            {/* Main Content */}
-            <div className="flex-1 max-w-[800px] w-full mx-auto px-6 py-12 md:py-16 space-y-10 text-center">
-              
-              <motion.div variants={springEntrance} className="space-y-4">
-                <div className="inline-flex items-center gap-2 text-success font-bold tracking-widest text-[11px] font-mono bg-surfacemerald-500/5 border border-emerald-500/15 rounded-full px-3 py-1 mx-auto">
-                  <CircleCheck className="w-4 h-4" />
-                  ANALYSIS COMPLETE
-                </div>
-                <h1 className="text-4xl md:text-5xl font-black text-text-primary uppercase">THRESHOLD SUBMITTED</h1>
-                <p className="text-sm text-slate-400 leading-relaxed max-w-xl mx-auto">
-                  Your decision threshold and reasoning has been successfully recorded. Here is a summary of your configuration.
-                </p>
-              </motion.div>
-
-              {/* Saved Configuration Summary Grid */}
-              <motion.div 
-                variants={springEntrance}
-                className="grid grid-cols-2 md:grid-cols-4 gap-4"
-              >
-                <div className="bg-surface-soft border border-border rounded-xl p-5 text-left space-y-2">
-                  <span className="text-[10px] font-mono font-bold tracking-widest text-slate-550 block uppercase">YOUR THRESHOLD</span>
-                  <span className="text-2xl font-black text-primary font-mono">{(savedThreshold * 100).toFixed(0)}%</span>
-                </div>
-                <div className="bg-surface-soft border border-border rounded-xl p-5 text-left space-y-2">
-                  <span className="text-[10px] font-mono font-bold tracking-widest text-slate-550 block uppercase">YOUR RECALL</span>
-                  <span className="text-2xl font-black text-text-primary font-mono">{savedMetrics.recall.toFixed(1)}%</span>
-                </div>
-                <div className="bg-surface-soft border border-border rounded-xl p-5 text-left space-y-2">
-                  <span className="text-[10px] font-mono font-bold tracking-widest text-slate-550 block uppercase">YOUR PRECISION</span>
-                  <span className="text-2xl font-black text-text-primary font-mono">{savedMetrics.precision.toFixed(1)}%</span>
-                </div>
-                <div className="bg-surface-soft border border-border rounded-xl p-5 text-left space-y-2">
-                  <span className="text-[10px] font-mono font-bold tracking-widest text-slate-550 block uppercase">ERRORS</span>
-                  <span className="text-xs font-bold text-slate-400 font-mono block pt-1">
-                    FN: <span className={savedMetrics.fn > 0 ? 'text-danger font-bold' : 'text-slate-405'}>{savedMetrics.fn}</span> &middot; FP: <span className={savedMetrics.fp > 0 ? 'text-warning font-bold' : 'text-slate-405'}>{savedMetrics.fp}</span>
-                  </span>
-                </div>
-              </motion.div>
-
-              {/* Justification Panel */}
-              <motion.div 
-                variants={springEntrance}
-                className="bg-surface-soft border border-border rounded-xl p-6 text-left space-y-3"
-              >
-                <div className="flex items-center gap-2 text-slate-555">
-                  <MessageSquareText className="w-4 h-4 text-primary" />
-                  <span className="text-[10px] font-mono font-bold tracking-widest uppercase text-slate-550">YOUR REASONING</span>
-                </div>
-                <blockquote className="text-sm text-slate-350 italic pl-1 leading-relaxed border-l-2 border-border-light ml-1 py-1">
-                  "{savedJustification}"
-                </blockquote>
-              </motion.div>
-
-              {/* Educational Disclaimer */}
-              <motion.div 
-                variants={springEntrance}
-                className="bg-surface-soft border border-border rounded-xl p-5 text-xs text-slate-500 text-left leading-relaxed relative overflow-hidden"
-              >
-                <span className="font-bold text-primary/80 block mb-1 uppercase font-mono tracking-wider text-[10px]">EDUCATIONAL NOTE</span>
-                These metrics are calculated from five demonstration cases and are not a measure of clinical model performance.
-              </motion.div>
-
-              {/* Reset to Start Challenge */}
-              <motion.div variants={springEntrance} className="pt-6">
-                <button
-                  onClick={() => {
-                    setZoom(1.0)
-                    setCurrentCaseIndex(0)
-                    setThreshold(0.50)
-                    setJustification('')
-                    setPredictions(Array.from({ length: 5 }, () => ({ prediction: null, confidence: 75, note: '' })))
-                    setScreenState('XRAY_INVESTIGATION')
-                  }}
-                  className="group relative flex items-center justify-center gap-2.5 bg-primary hover:bg-primary-dark text-white font-bold px-8 py-3.5 rounded-lg shadow-sm cursor-pointer mx-auto font-mono uppercase tracking-widest text-xs"
-                >
-                  <span>Reset and Play Again</span>
-                  <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-                </button>
-              </motion.div>
-
-            </div>
-
-            {/* Footer */}
-            <footer className="w-full border-t border-slate-950 bg-surface py-8 mt-auto">
-              <div className="max-w-7xl mx-auto px-6 text-center">
-                <span className="text-xs font-semibold tracking-wider text-slate-500 block mb-2">
-                  AI Doctor Lab &middot; Educational Simulation
-                </span>
-              </div>
-            </footer>
-          </motion.div>
+        
+        {screenState === 'PHASE_3_WAITING' && (
+          <Phase3WaitingRoom quizRoomId={localStorage.getItem('active_quiz_room_id') || ''} />
         )}
-
-      
+        
+        {screenState === 'INSTRUCTOR_QUIZ_CONTROL' && (
+          <InstructorQuizControl />
+        )}
         {/* ==========================================
             SCREEN 7: INSTRUCTOR LOGIN SCREEN
             ========================================== */}
@@ -2814,14 +2279,17 @@ function App() {
             SCREEN 8: INSTRUCTOR DASHBOARD SCREEN
             ========================================== */}
         {screenState === 'INSTRUCTOR_DASHBOARD' && (() => {
-          // Calculate Day 1 statistics
-          const day1Sessions = dashboardStudents.map(student => student.sessions?.find((s: any) => s.day_number === 1)).filter(Boolean)
-          const totalStudentsCount = dashboardStudents.length
+          // Filter by selected batch
+          const batchStudents = dashboardStudents.filter(s => s.batch === dashboardBatch)
+
+          // Calculate Day 1 statistics based on batch
+          const day1Sessions = batchStudents.map(student => student.sessions?.find((s: any) => s.day_number === 1)).filter(Boolean)
+          const totalStudentsCount = batchStudents.length
           const completedCount = day1Sessions.filter((s: any) => s.status === 'completed').length
           const inProgressCount = day1Sessions.filter((s: any) => s.status === 'in_progress').length
 
-          // Filter Students list
-          const filteredStudents = dashboardStudents.filter(student => {
+          // Filter Students list based on search and status
+          const filteredStudents = batchStudents.filter(student => {
             const session = student.sessions?.find((s: any) => s.day_number === 1)
             const matchesName = student.name.toLowerCase().includes(searchName.toLowerCase())
             const matchesRoll = student.roll_number.toLowerCase().includes(searchRoll.toLowerCase())
@@ -2848,18 +2316,6 @@ function App() {
           }
 
           const sortedStudentsForList = getSortedStudents(filteredStudents)
-          const completedStudentsOnly = dashboardStudents.filter(student => {
-            const session = student.sessions?.find((s: any) => s.day_number === 1)
-            return session?.status === 'completed'
-          })
-          const leaderboardStudents = getSortedStudents(completedStudentsOnly)
-
-          const formatDuration = (seconds: number) => {
-            if (isNaN(seconds) || seconds === Infinity || seconds === null) return 'N/A'
-            const mins = Math.floor(seconds / 60)
-            const secs = Math.floor(seconds % 60)
-            return `${mins}m ${secs}s`
-          }
 
           return (
             <motion.div
@@ -2890,6 +2346,12 @@ function App() {
 
                   <div className="flex items-center gap-4">
                     <button
+                      onClick={() => setScreenState('INSTRUCTOR_QUIZ_CONTROL')}
+                      className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold font-mono px-4 py-2 rounded-lg transition-colors cursor-pointer"
+                    >
+                      PHASE 3 QUIZ
+                    </button>
+                    <button
                       onClick={handleExportCSV}
                       className="bg-[#0B6FE8] hover:bg-[#0F5E9C] text-white text-xs font-bold font-mono px-4 py-2 rounded-lg transition-colors cursor-pointer"
                     >
@@ -2907,8 +2369,7 @@ function App() {
 
               {/* Dashboard Tabs & Metrics */}
               <div className="flex-1 max-w-7xl w-full mx-auto px-6 py-10 space-y-8">
-                
-                {/* Tab Navigation */}
+                {/* Dashboard Tabs & Metrics */}
                 <div className="border-b border-[#D5E5EE] flex gap-2">
                   {(['DAY_01', 'DAY_02', 'DAY_03', 'DAY_04'] as const).map(tab => (
                     <button
@@ -2921,6 +2382,23 @@ function App() {
                       }`}
                     >
                       {tab === 'DAY_01' ? 'DAY 01' : `${tab.replace('DAY_', 'DAY ')}`}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Batch Navigation */}
+                <div className="border-b border-[#D5E5EE] flex gap-2 mt-4">
+                  {(['BATCH 1', 'BATCH 2', 'BATCH 3', 'BATCH 8'] as const).map(batch => (
+                    <button
+                      key={batch}
+                      onClick={() => setDashboardBatch(batch)}
+                      className={`pb-3 px-4 text-xs font-mono font-bold tracking-wider transition-all border-b-2 cursor-pointer ${
+                        dashboardBatch === batch 
+                          ? 'border-[#0B6FE8] text-[#0B6FE8]' 
+                          : 'border-transparent text-[#6E879A] hover:text-[#12324A]'
+                      }`}
+                    >
+                      {batch}
                     </button>
                   ))}
                 </div>
@@ -2952,9 +2430,9 @@ function App() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className="grid grid-cols-1 gap-8">
                       {/* Student Table Area */}
-                      <div className="lg:col-span-2 bg-white border border-[#D5E5EE] rounded-2xl p-6 shadow-sm text-left space-y-4">
+                      <div className="bg-white border border-[#D5E5EE] rounded-2xl p-6 shadow-sm text-left space-y-4">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                           <div>
                             <h3 className="text-sm font-mono font-black text-[#12324A] uppercase tracking-wider">DAY 01 STUDENTS</h3>
@@ -3049,55 +2527,6 @@ function App() {
                                       </td>
                                       <td className="p-3 text-left font-extrabold text-[#6E879A]">
                                         Awaiting Score
-                                      </td>
-                                    </tr>
-                                  )
-                                })
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-
-                      {/* Leaderboard Area */}
-                      <div className="bg-white border border-[#D5E5EE] rounded-2xl p-6 shadow-sm text-left space-y-4">
-                        <div>
-                          <h3 className="text-sm font-mono font-black text-[#12324A] uppercase tracking-wider">DAY 01 LEADERBOARD</h3>
-                          <p className="text-[11px] text-[#6E879A] font-mono mt-0.5">Top performing student diagnoses.</p>
-                        </div>
-
-                        <div className="overflow-x-auto border border-[#D5E5EE]/55 rounded-xl">
-                          <table className="w-full text-xs font-mono">
-                            <thead>
-                              <tr className="bg-[#F8FBFD] border-b border-[#D5E5EE] text-[#6E879A] uppercase text-[9px]">
-                                <th className="p-3 text-left">RANK</th>
-                                <th className="p-3 text-left">NAME</th>
-                                <th className="p-3 text-left">SCORE</th>
-                                <th className="p-3 text-right">TIME</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-[#D5E5EE]/40">
-                              {leaderboardStudents.length === 0 ? (
-                                <tr>
-                                  <td colSpan={4} className="p-8 text-center text-slate-400">
-                                    No completed submissions yet.
-                                  </td>
-                                </tr>
-                              ) : (
-                                leaderboardStudents.map((student, idx) => {
-                                  const session = student.sessions?.find((se: any) => se.day_number === 1)
-                                  const result = session?.results?.[0]
-                                  return (
-                                    <tr key={student.id} className="hover:bg-slate-50/50 transition-colors">
-                                      <td className="p-3 text-left font-bold text-[#0B6FE8]">{idx + 1}</td>
-                                      <td className="p-3 text-left font-bold text-[#12324A] truncate max-w-[100px]" title={student.name}>
-                                        {student.name}
-                                      </td>
-                                      <td className="p-3 text-left text-slate-500 font-extrabold text-[10px]">
-                                        AWAITING SCORE
-                                      </td>
-                                      <td className="p-3 text-right text-[#6E879A]">
-                                        {result ? formatDuration(result.completion_time) : '-'}
                                       </td>
                                     </tr>
                                   )

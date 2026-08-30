@@ -12,6 +12,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
     "@tailwindcss/vite": "^4.3.3",
+    "dotenv": "^17.4.2",
     "framer-motion": "^13.1.1",
     "lucide-react": "^1.33.0",
     "react": "^19.2.8",
