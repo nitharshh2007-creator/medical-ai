@@ -36,6 +36,20 @@
   --color-danger-border: #F1C5CC;
 
   --font-sans: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
+
+  --animate-scan: scan 1.8s linear infinite;
+
+  @keyframes scan {
+    0% {
+      top: 0%;
+    }
+    50% {
+      top: 100%;
+    }
+    100% {
+      top: 0%;
+    }
+  }
 }
 
 body {

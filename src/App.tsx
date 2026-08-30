@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Phase3WaitingRoom } from './components/Phase3WaitingRoom'
 import { InstructorQuizControl } from './components/InstructorQuizControl'
 import {
   ArrowRight,
-  AlertCircle,
   Search,
   BarChart2,
   ShieldCheck,
@@ -36,7 +35,9 @@ import {
   UserRound,
   BadgeCheck,
   Eye,
-  Lightbulb
+  Lightbulb,
+  Volume2,
+  VolumeX
 } from 'lucide-react'
 import xrayImg from './assets/xray.jpg'
 import { xrayCases } from './data/xrayCases'
@@ -101,6 +102,69 @@ function App() {
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [registrationError, setRegistrationError] = useState<string | null>(null)
+
+  // Sound feedback states & refs
+  const [isMuted, setIsMuted] = useState(false)
+  const correctAudioRef = useRef<HTMLAudioElement | null>(null)
+  const wrongAudioRef = useRef<HTMLAudioElement | null>(null)
+
+  useEffect(() => {
+    correctAudioRef.current = new Audio('/sounds/correct.mp3')
+    wrongAudioRef.current = new Audio('/sounds/wrong.mp3')
+  }, [])
+
+  // Scroll to top of page on screen state or case index changes in Phase 1
+  useEffect(() => {
+    const phase1Screens = ['CASE_BRIEF', 'XRAY_INVESTIGATION', 'CASE_RESULT', 'MODEL_PREDICTION', 'COMPLETION']
+    if (phase1Screens.includes(screenState)) {
+      window.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+      })
+    }
+  }, [currentCaseIndex, screenState])
+
+  // Landing page animation states
+  const [landingAnimState, setLandingAnimState] = useState<'READY' | 'SCANNING' | 'READY_CARDS'>('READY')
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
+
+  // Detect prefers-reduced-motion
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+    setPrefersReducedMotion(mediaQuery.matches)
+    const listener = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches)
+    mediaQuery.addEventListener('change', listener)
+    return () => mediaQuery.removeEventListener('change', listener)
+  }, [])
+
+  // Landing page animation loop
+  useEffect(() => {
+    if (screenState !== 'LANDING') return
+
+    let timer: any
+
+    const runLoop = () => {
+      setLandingAnimState('READY')
+      
+      timer = setTimeout(() => {
+        setLandingAnimState('SCANNING')
+        
+        timer = setTimeout(() => {
+          setLandingAnimState('READY_CARDS')
+          
+          timer = setTimeout(() => {
+            runLoop()
+          }, 3000) // Display cards for 3 seconds
+        }, 1800) // Scan takes 1.8 seconds
+      }, 800) // Ready state lasts 800ms
+    }
+
+    runLoop()
+
+    return () => {
+      clearTimeout(timer)
+    }
+  }, [screenState])
 
   // Instructor dashboard data fetching
   const fetchDashboardData = async () => {
@@ -478,6 +542,19 @@ function App() {
       console.error("Error saving prediction:", err)
     }
 
+    // Play sound feedback
+    if (!isMuted) {
+      const isCorrect = currentStudentPrediction.prediction === currentCase.actualLabel
+      const audio = isCorrect ? correctAudioRef.current : wrongAudioRef.current
+      if (audio) {
+        audio.pause()
+        audio.currentTime = 0
+        audio.play().catch(err => {
+          console.warn("Sound playback failed:", err)
+        })
+      }
+    }
+
     localStorage.setItem('active_screen_state', 'CASE_RESULT')
     setScreenState('CASE_RESULT')
   }
@@ -707,53 +784,128 @@ function App() {
                 </motion.div>
 
                 {/* Right Column: Hero Preview Card */}
-                <motion.div
-                  className="lg:col-span-5 relative w-full max-w-md mx-auto lg:max-w-none bg-white p-4 rounded-2xl border border-[#D5E5EE] shadow-[0_8px_30px_rgba(30,90,130,0.08)]"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 1, delay: 0.4, ease: 'easeOut' }}
-                >
-                  <div className="relative aspect-[4/5] bg-slate-950 rounded-xl overflow-hidden shadow-inner">
-                    <img 
-                      src={xrayImg} 
-                      alt="Clinical Chest X-Ray Scan" 
-                      className="w-full h-full object-cover opacity-80 contrast-125 brightness-90 select-none pointer-events-none"
-                    />
-                    
-                    {/* Bounding box for ROI target */}
-                    <div className="absolute left-[20%] top-[40%] w-[32%] h-[28%] border-2 border-dashed border-blue-500 rounded bg-blue-500/10 z-20">
-                      <div className="absolute -top-[2px] -left-[2px] w-2 h-2 border-t-4 border-l-4 border-blue-500" />
-                      <div className="absolute -top-[2px] -right-[2px] w-2 h-2 border-t-4 border-r-4 border-blue-500" />
-                      <div className="absolute -bottom-[2px] -left-[2px] w-2 h-2 border-b-4 border-l-4 border-blue-500" />
-                      <div className="absolute -bottom-[2px] -right-[2px] w-2 h-2 border-b-4 border-r-4 border-blue-500" />
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-8 h-8 rounded-full border border-blue-500/40 flex items-center justify-center animate-ping" />
-                        <div className="w-2 h-2 rounded-full bg-blue-500 shadow-sm" />
+                <div className="lg:col-span-5 relative w-full max-w-md mx-auto lg:max-w-none">
+                  <motion.div
+                    className="w-full bg-white p-4 rounded-2xl border border-[#D5E5EE] shadow-[0_8px_30px_rgba(30,90,130,0.08)]"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 1, delay: 0.4, ease: 'easeOut' }}
+                  >
+                    <div className="relative aspect-[4/5] bg-slate-950 rounded-xl overflow-hidden shadow-inner">
+                      <img 
+                        src={xrayImg} 
+                        alt="Clinical Chest X-Ray Scan" 
+                        className="w-full h-full object-cover opacity-80 contrast-125 brightness-90 select-none pointer-events-none"
+                      />
+                      
+                      {/* Status badge in top-left */}
+                      <div className="absolute top-4 left-4 z-40">
+                        <span className={`text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded flex items-center gap-1.5 shadow-sm ${
+                          landingAnimState === 'SCANNING' 
+                            ? 'text-white bg-[#0B6FE8]' 
+                            : landingAnimState === 'READY_CARDS' 
+                              ? 'text-[#147A58] bg-[#EAF7F2] border border-[#BFE5D5]' 
+                              : 'text-slate-300 bg-slate-800/80 border border-slate-700'
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${
+                            landingAnimState === 'SCANNING' 
+                              ? 'bg-white animate-ping' 
+                              : landingAnimState === 'READY_CARDS' 
+                                ? 'bg-[#147A58]' 
+                                : 'bg-slate-400'
+                          }`} />
+                          {landingAnimState === 'SCANNING' ? 'SCANNING...' : landingAnimState === 'READY_CARDS' ? 'AI ANALYSIS READY' : 'ANALYZING...'}
+                        </span>
                       </div>
+
+                      {/* Initial and Scanning state centered "?" & status label */}
+                      {landingAnimState !== 'READY_CARDS' && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/35 z-30 pointer-events-none">
+                          <span className={`text-[120px] font-black text-white/20 select-none leading-none ${
+                            landingAnimState === 'SCANNING' ? 'animate-[pulse_1.2s_infinite_ease-in-out]' : ''
+                          }`} style={{ fontFamily: 'system-ui, sans-serif' }}>
+                            ?
+                          </span>
+                          <span className="text-[10px] font-mono tracking-widest text-slate-300 uppercase font-bold mt-2">
+                            ANALYZING...
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Scanning beam and grid overlay */}
+                      {landingAnimState === 'SCANNING' && !prefersReducedMotion && (
+                        <>
+                          <div 
+                            className="absolute left-0 right-0 h-1 bg-[#0B6FE8] shadow-[0_0_15px_#0B6FE8,0_0_30px_#0B6FE8] z-35 pointer-events-none animate-scan"
+                          />
+                          <div 
+                            className="absolute inset-0 bg-[linear-gradient(rgba(11,111,232,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(11,111,232,0.08)_1px,transparent_1px)] bg-[size:20px_20px] z-25 pointer-events-none animate-[pulse_1.5s_infinite_ease-in-out]"
+                          />
+                        </>
+                      )}
+
+                      {/* Sliding assessment cards directly overlaying the X-ray itself */}
+                      <AnimatePresence>
+                        {landingAnimState === 'READY_CARDS' && (
+                          <div className="absolute bottom-4 left-3 right-3 flex flex-col gap-2.5 z-45 pointer-events-none">
+                            {/* What's Your Assessment overlay badge */}
+                            <div className="flex justify-center">
+                              <span className="bg-[#062B5C]/95 backdrop-blur-sm text-white text-[8px] font-mono tracking-widest px-2.5 py-0.5 rounded uppercase font-bold shadow-md">
+                                WHAT'S YOUR ASSESSMENT?
+                              </span>
+                            </div>
+
+                            <div className="flex gap-2.5 w-full justify-between items-center">
+                              {/* Left Card: PNEUMONIA */}
+                              <motion.div
+                                initial={{ x: -120, opacity: 0 }}
+                                animate={{ x: 0, opacity: 1 }}
+                                exit={{ x: -120, opacity: 0 }}
+                                transition={{ type: "spring", stiffness: 140, damping: 13 }}
+                                className="flex-1 flex items-center gap-2 p-2 bg-[#FDF4F5]/95 backdrop-blur-sm border border-[#F1C5CC] rounded-lg shadow-lg"
+                              >
+                                <div className="text-danger flex items-center justify-center">
+                                  <Lungs className="w-5 h-5 text-[#B84C59]" />
+                                </div>
+                                <div className="flex flex-col text-left">
+                                  <span className="text-[9px] font-black text-[#B84C59] uppercase tracking-wide leading-none">PNEUMONIA</span>
+                                  <span className="text-[8px] text-[#49677F] font-bold leading-tight mt-1">Signs of infection</span>
+                                </div>
+                              </motion.div>
+
+                              {/* Right Card: NOT PNEUMONIA */}
+                              <motion.div
+                                initial={{ x: 120, opacity: 0 }}
+                                animate={{ x: 0, opacity: 1 }}
+                                exit={{ x: 120, opacity: 0 }}
+                                transition={{ type: "spring", stiffness: 140, damping: 13 }}
+                                className="flex-1 flex items-center gap-2 p-2 bg-[#F4FDF9]/95 backdrop-blur-sm border border-[#BFE5D5] rounded-lg shadow-lg"
+                              >
+                                <div className="text-success flex items-center justify-center">
+                                  <Lungs className="w-5 h-5 text-[#147A58]" />
+                                </div>
+                                <div className="flex flex-col text-left">
+                                  <span className="text-[9px] font-black text-[#147A58] uppercase tracking-wide leading-none">NOT PNEUMONIA</span>
+                                  <span className="text-[8px] text-[#49677F] font-bold leading-tight mt-1">No infection</span>
+                                </div>
+                              </motion.div>
+                            </div>
+                          </div>
+                        )}
+                      </AnimatePresence>
+                      
+                      {/* Top brackets */}
+                      <div className="absolute top-3 left-3 w-4 h-4 border-t-2 border-l-2 border-white/60 pointer-events-none" />
+                      <div className="absolute top-3 right-3 w-4 h-4 border-t-2 border-r-2 border-white/60 pointer-events-none" />
                     </div>
-                    
-                    {/* Top brackets */}
-                    <div className="absolute top-3 left-3 w-4 h-4 border-t-2 border-l-2 border-white/60 pointer-events-none" />
-                    <div className="absolute top-3 right-3 w-4 h-4 border-t-2 border-r-2 border-white/60 pointer-events-none" />
+                  </motion.div>
+
+                  {/* Caption beneath card */}
+                  <div className="mt-3 flex items-center justify-center gap-1.5 text-[11px] text-[#6E879A] font-semibold">
+                    <Info className="w-3.5 h-3.5 text-[#0B6FE8]" />
+                    <span>Choose the option that best matches the X-ray.</span>
                   </div>
-                  
-                  {/* Info banner at bottom of card */}
-                  <div className="mt-4 p-4 bg-[#F8FBFD] border border-[#D5E5EE] rounded-xl text-left">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-[10px] font-mono tracking-widest text-[#6E879A] uppercase font-bold">AT RISK: PNEUMONIA</span>
-                      <span className="text-[10px] font-mono text-[#6E879A] uppercase tracking-widest font-bold">PATIENT 001</span>
-                    </div>
-                    <div className="flex justify-between items-end">
-                      <div>
-                        <span className="text-xl font-black text-[#0B6FE8] tracking-wider">NORMAL</span>
-                        <span className="text-xs text-[#49677F] ml-2 font-semibold">87% confidence</span>
-                      </div>
-                      <span className="text-[10px] font-mono text-danger font-extrabold flex items-center gap-1 bg-[#FCECEE] border border-red-200 px-2.5 py-0.5 rounded-full uppercase">
-                        <AlertCircle className="w-3.5 h-3.5" /> MISSED TARGET
-                      </span>
-                    </div>
-                  </div>
-                </motion.div>
+                </div>
               </div>
             </main>
 
@@ -1033,6 +1185,15 @@ function App() {
                 </div>
                 
                 <div className="flex items-center gap-6 text-xs font-bold text-white/90">
+                  <button
+                    type="button"
+                    onClick={() => setIsMuted(prev => !prev)}
+                    className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-1 rounded border border-white/15 transition-colors cursor-pointer text-white font-bold"
+                    title={isMuted ? "Unmute sounds" : "Mute sounds"}
+                  >
+                    {isMuted ? <VolumeX className="w-4 h-4 text-[#FF4D4D]" /> : <Volume2 className="w-4 h-4 text-[#00A86B]" />}
+                    <span className="font-mono tracking-wider uppercase">{isMuted ? "MUTED" : "SOUND ON"}</span>
+                  </button>
                   <div className="flex items-center gap-2 bg-white/10 px-3 py-1 rounded border border-white/15">
                     <CalendarDays className="w-4 h-4 text-[#0B6FE8]" />
                     <span className="font-mono tracking-wider uppercase">DAY 01</span>
@@ -1249,11 +1410,11 @@ function App() {
               {/* Why This Matters */}
               <motion.div variants={springEntrance} className="space-y-6 pt-4">
                 <div className="text-left flex gap-3 items-center">
-                  <div className="w-9 h-9 bg-[#E1F1F9] border border-[#0B6FE8]/25 text-[#0B6FE8] rounded-lg flex items-center justify-center">
+                  <div className="w-10 h-10 bg-[#E1F1F9] border border-[#0B6FE8]/20 text-[#0B6FE8] rounded-xl flex items-center justify-center shadow-sm">
                     <CircleAlert className="w-5 h-5" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-black tracking-tight text-[#12324A] uppercase leading-none mb-1.5">WHY THIS MATTERS</h2>
+                    <h2 className="text-xl font-black tracking-tight text-[#12324A] uppercase leading-none mb-1.5 font-mono">WHY THIS MATTERS</h2>
                     <p className="text-xs text-[#6E879A] uppercase tracking-wider font-mono leading-none">
                       In medicine, AI's wrong choice isn't just a data point. The type of mistake matters.
                     </p>
@@ -1263,29 +1424,29 @@ function App() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* False Positive card */}
                   <motion.div 
-                    className="flex gap-4 p-5 rounded-2xl border border-[#D5E5EE] bg-white items-center text-left transition-all duration-300 hover:border-red-300 hover:bg-[#FCECEE] group cursor-default"
+                    className="flex gap-4 p-6 rounded-2xl border border-[#D5E5EE] bg-white items-center text-left transition-all duration-300 hover:border-amber-300 hover:bg-amber-50/30 group cursor-default shadow-sm"
                     whileHover={{ y: -2 }}
                   >
-                    <div className="p-2.5 bg-[#FCECEE] border border-red-200 text-danger rounded-xl shrink-0">
+                    <div className="p-3 bg-amber-50 border border-amber-200 text-amber-600 rounded-xl shrink-0">
                       <CircleX className="w-5 h-5" />
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-[#12324A] uppercase tracking-wider mb-1 font-mono">FALSE POSITIVE</h4>
-                      <p className="text-xs text-[#49677F]">Healthy patient flagged as positive.</p>
+                      <p className="text-xs text-[#49677F] leading-snug">Healthy patient flagged as positive. Leads to extra testing and stress.</p>
                     </div>
                   </motion.div>
 
                   {/* False Negative card (More prominent as it is central to investigation) */}
                   <motion.div 
-                    className="flex gap-4 p-5 rounded-2xl border-2 border-red-350 bg-[#FCECEE] items-center text-left transition-all duration-300 hover:border-red-400 group cursor-default shadow-sm"
+                    className="flex gap-4 p-6 rounded-2xl border-2 border-red-200 bg-[#FDF4F5] items-center text-left transition-all duration-300 hover:border-red-300 group cursor-default shadow-md"
                     whileHover={{ y: -2 }}
                   >
-                    <div className="p-2.5 bg-red-500 text-white rounded-xl shrink-0 shadow-sm animate-pulse">
+                    <div className="p-3 bg-[#B84C59] text-white rounded-xl shrink-0 shadow-sm animate-pulse">
                       <TriangleAlert className="w-5 h-5" />
                     </div>
                     <div>
-                      <h4 className="text-xs font-black text-danger uppercase tracking-wider mb-1 font-mono">FALSE NEGATIVE (CRITICAL)</h4>
-                      <p className="text-xs text-danger font-semibold">Sick patient classified as normal.</p>
+                      <h4 className="text-xs font-black text-[#B84C59] uppercase tracking-wider mb-1 font-mono">FALSE NEGATIVE (CRITICAL)</h4>
+                      <p className="text-xs text-[#B84C59] font-bold leading-snug">Sick patient classified as normal. Delaying crucial treatment.</p>
                     </div>
                   </motion.div>
                 </div>
@@ -1294,14 +1455,16 @@ function App() {
               {/* Educational Simulation Box */}
               <motion.div 
                 variants={springEntrance}
-                className="flex items-center gap-4 max-w-4xl w-full mx-auto border border-[#D5E5EE] bg-white py-5 px-6 rounded-2xl text-left relative overflow-hidden transition-all duration-300 hover:border-[#BCD4E3] shadow-sm"
+                className="flex items-start gap-4 max-w-4xl w-full mx-auto border border-[#D5E5EE] bg-white p-6 rounded-2xl text-left relative overflow-hidden transition-all duration-300 hover:border-[#BCD4E3] shadow-sm"
               >
-                <div className="w-10 h-10 rounded-full border border-[#0B6FE8]/25 bg-[#E1F1F9] flex items-center justify-center text-[#0B6FE8] shrink-0">
+                <div className="w-10 h-10 rounded-full border border-[#0B6FE8]/25 bg-[#E1F1F9] flex items-center justify-center text-[#0B6FE8] shrink-0 mt-0.5 shadow-sm">
                   <Info className="w-5 h-5" />
                 </div>
-                <div className="text-xs leading-relaxed text-[#49677F] relative z-10">
-                  <span className="font-bold text-[#0B6FE8] block mb-0.5 uppercase font-mono tracking-wider text-[10px]">EDUCATIONAL SIMULATION</span>
-                  This experience uses de-identified public medical imaging for educational purposes. It is not intended for clinical diagnosis.
+                <div className="text-xs leading-relaxed text-[#49677F] flex-1">
+                  <span className="font-bold text-[#0B6FE8] block mb-1 uppercase font-mono tracking-widest text-[10px]">EDUCATIONAL SIMULATION</span>
+                  <p className="font-medium text-[#49677F]">
+                    This experience uses de-identified public medical imaging for educational purposes. It is not intended for clinical diagnosis.
+                  </p>
                 </div>
               </motion.div>
 
@@ -1324,10 +1487,16 @@ function App() {
             </div>
 
             {/* Footer */}
-            <footer className="w-full border-t border-slate-950 bg-surface py-8 mt-auto">
-              <div className="max-w-7xl mx-auto px-6 text-center">
-                <span className="text-xs font-semibold tracking-wider text-slate-500 block mb-2">
-                  AI Doctor Lab &middot; Educational Simulation
+            <footer className="w-full bg-[#062B5C] py-10 mt-auto border-t border-[#062B5C] text-white">
+              <div className="max-w-7xl mx-auto px-6 text-center space-y-2">
+                <span className="text-xs font-mono font-bold tracking-widest text-[#E1F1F9] uppercase block">
+                  AI DOCTOR LAB
+                </span>
+                <span className="text-[10px] text-slate-300 font-medium block">
+                  Educational Simulation &middot; Medical AI Research Dashboard
+                </span>
+                <span className="text-[9px] text-slate-400 font-mono block">
+                  &copy; {new Date().getFullYear()} AI Doctor Lab. All rights reserved.
                 </span>
               </div>
             </footer>
@@ -1365,6 +1534,15 @@ function App() {
                 </div>
                 
                 <div className="flex items-center gap-6 text-xs font-bold text-white/90">
+                  <button
+                    type="button"
+                    onClick={() => setIsMuted(prev => !prev)}
+                    className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-1 rounded border border-white/15 transition-colors cursor-pointer text-white font-bold"
+                    title={isMuted ? "Unmute sounds" : "Mute sounds"}
+                  >
+                    {isMuted ? <VolumeX className="w-4 h-4 text-[#FF4D4D]" /> : <Volume2 className="w-4 h-4 text-[#00A86B]" />}
+                    <span className="font-mono tracking-wider uppercase">{isMuted ? "MUTED" : "SOUND ON"}</span>
+                  </button>
                   <div className="flex items-center gap-2 bg-white/10 px-3 py-1 rounded border border-white/15">
                     <CalendarDays className="w-4 h-4 text-[#0B6FE8]" />
                     <span className="font-mono tracking-wider uppercase">DAY 01</span>
@@ -1711,6 +1889,15 @@ function App() {
                 </div>
                 
                 <div className="flex items-center gap-6 text-xs font-bold text-white/90">
+                  <button
+                    type="button"
+                    onClick={() => setIsMuted(prev => !prev)}
+                    className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-1 rounded border border-white/15 transition-colors cursor-pointer text-white font-bold"
+                    title={isMuted ? "Unmute sounds" : "Mute sounds"}
+                  >
+                    {isMuted ? <VolumeX className="w-4 h-4 text-[#FF4D4D]" /> : <Volume2 className="w-4 h-4 text-[#00A86B]" />}
+                    <span className="font-mono tracking-wider uppercase">{isMuted ? "MUTED" : "SOUND ON"}</span>
+                  </button>
                   <div className="flex items-center gap-2 bg-white/10 px-3 py-1 rounded border border-white/15">
                     <CalendarDays className="w-4 h-4 text-[#0B6FE8]" />
                     <span className="font-mono tracking-wider uppercase">DAY 01</span>
